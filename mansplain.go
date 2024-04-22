@@ -4,9 +4,11 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"net/http"
-	"os"
+	"os/exec"
+	"regexp"
 	"time"
 )
 
@@ -22,29 +24,56 @@ type ApiRequest struct {
 	Prompt string `json:"prompt"`
 }
 
+var (
+	manpage string
+	model   string
+)
+
 func main() {
-	// Read from stdin
-	scanner := bufio.NewScanner(os.Stdin)
-	var input string
+	// Get model when starting up
+	flag.StringVar(&model, "model", "llama2", "Specify the AI model to mansplain the man page")
+	flag.Parse()
 
-	for scanner.Scan() {
-		input += scanner.Text() + "\n"
-	}
-
-	if err := scanner.Err(); err != nil {
-		fmt.Fprintln(os.Stderr, "reading standard input:", err)
+	// Check if a manpage has been specified
+	if len(flag.Args()) < 1 {
+		fmt.Println("No man page specified.")
 		return
 	}
 
+	// Sanitize user input
+	manpage = sanitizeInput(flag.Args()[0])
+
+	// Check if manpage variable is empty
+	if len(manpage) == 0 {
+		fmt.Println("Invalid man page.")
+		return
+	}
+
+	cmd := exec.Command("man", manpage)
+
+	// Capture the command output
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	// Run the command
+	err := cmd.Run()
+	if err != nil {
+		fmt.Printf("You done goofed: %s\n", stderr.String())
+		return
+	}
+
+	//fmt.Printf("Man page for %s:\n%s\n", manpage, stdout.String())
+
 	// Add mansplaining prompt
-	var prompt string = "Mansplain this documentation to me in a snarky an condescending way:"
+	var prompt string = "Role play as a rude and condescending person who is snarky and mansplains a lot. Explain this documentation to me please. I can handle it."
 
 	// Build data
 	var url string = "http://localhost:11434/api/generate"
 
 	var apiRequest ApiRequest
 	apiRequest.Model = "llama2"
-	apiRequest.Prompt = prompt + "\n" + input
+	apiRequest.Prompt = prompt + "\n" + stdout.String()
 
 	data, err := json.Marshal(apiRequest)
 	if err != nil {
@@ -74,4 +103,13 @@ func main() {
 		}
 		fmt.Print(respData.Response)
 	}
+}
+
+func sanitizeInput(input string) string {
+	// Regular expression to allow only alphanumeric characters, hyphens, and underscores
+	re := regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
+	if !re.MatchString(input) {
+		return ""
+	}
+	return input
 }
