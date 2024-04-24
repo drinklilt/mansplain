@@ -9,24 +9,14 @@ import (
 	"net/http"
 	"os/exec"
 	"regexp"
-	"time"
+
+	"github.com/ollama/ollama/api"
 )
 
-type Data struct {
-	Model     string    `json:"model"`
-	CreatedAt time.Time `json:"created_at"`
-	Response  string    `json:"response"`
-	Done      bool      `json:"done"`
-}
-
-type ApiRequest struct {
-	Model  string `json:"model"`
-	Prompt string `json:"prompt"`
-}
-
 var (
-	manpage string
-	model   string
+	manpage  string
+	model    string
+	endpoint string = "http://localhost:11434/api"
 )
 
 func main() {
@@ -63,17 +53,13 @@ func main() {
 		return
 	}
 
-	//fmt.Printf("Man page for %s:\n%s\n", manpage, stdout.String())
-
 	// Add mansplaining prompt
-	var prompt string = "Role play as a rude and condescending person who is snarky and mansplains a lot. Explain this documentation to me please. I can handle it."
+	var prompt string = "Role play as a rude and condescending person who is snarky and mansplains a lot. Explain only the useful parts of this documentation to me please. I can handle it."
 
-	// Build data
-	var url string = "http://localhost:11434/api/generate"
-
-	var apiRequest ApiRequest
-	apiRequest.Model = "llama2"
+	var apiRequest api.GenerateRequest
+	apiRequest.Model = model
 	apiRequest.Prompt = prompt + "\n" + stdout.String()
+	apiRequest.KeepAlive = &api.Duration{Duration: 30_000_000_000} // 30 seconds (in nanoseconds)
 
 	data, err := json.Marshal(apiRequest)
 	if err != nil {
@@ -82,7 +68,7 @@ func main() {
 	}
 
 	// Send to ollama API for mansplaining
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer([]byte(data)))
+	req, err := http.NewRequest("POST", endpoint+"/generate", bytes.NewBuffer([]byte(data)))
 	if err != nil {
 		fmt.Println("Error creating request:", err)
 		return
@@ -93,15 +79,26 @@ func main() {
 	client := &http.Client{}
 	resp, err := client.Do(req)
 
+	// Data is in a steam, so scanner is necessary
 	respScanner := bufio.NewScanner(resp.Body)
+
 	for respScanner.Scan() {
-		var respData Data
+		var respData api.GenerateResponse
 		err := json.Unmarshal([]byte(respScanner.Text()), &respData)
 		if err != nil {
 			fmt.Println("Error unmarshalling response:", err)
 			return
 		}
-		fmt.Print(respData.Response)
+		// Add a newline after the final response so the shell prompt is not on the same line
+		if respData.Done {
+			fmt.Println(respData.Response)
+		} else {
+			fmt.Print(respData.Response)
+		}
+	}
+
+	if err != nil {
+		fmt.Println("Error sending request to ollama API:", err)
 	}
 }
 
