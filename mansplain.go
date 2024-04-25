@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os/exec"
 	"regexp"
 
@@ -22,11 +23,19 @@ var (
 func main() {
 	// Get model when starting up
 	flag.StringVar(&model, "model", "llama2", "Specify the AI model to mansplain the man page")
+	flag.StringVar(&endpoint, "endpoint", "http://localhost:11434/api", "Specify the endpoint of the Ollama API")
 	flag.Parse()
 
 	// Check if a manpage has been specified
 	if len(flag.Args()) < 1 {
 		fmt.Println("No man page specified.")
+		return
+	}
+
+	// Check if the endpoint is a valid url
+	_, err := url.ParseRequestURI(endpoint)
+	if err != nil {
+		fmt.Println("Invalid endpoint.")
 		return
 	}
 
@@ -47,14 +56,14 @@ func main() {
 	cmd.Stderr = &stderr
 
 	// Run the command
-	err := cmd.Run()
+	err = cmd.Run()
 	if err != nil {
 		fmt.Printf("You done goofed: %s\n", stderr.String())
 		return
 	}
 
 	// Add mansplaining prompt
-	var prompt string = "Role play as a rude and condescending person who is snarky and mansplains a lot. Explain only the useful parts of this documentation to me please. I can handle it."
+	var prompt string = "Role play as a rude and condescending person who is snarky and mansplains a lot. Explain this documentation to me please. I can handle it."
 
 	var apiRequest api.GenerateRequest
 	apiRequest.Model = model
